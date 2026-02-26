@@ -31,6 +31,10 @@ cd wifi-security-hub
 ```sh
 pip install flask flask-socketio scapy pandas numpy requests
 ```
+Перед запуском убедитесь, что файл front.html находится в папке templates:
+```sh
+mkdir templates && mv front.html templates/
+```
 
 ## Запуск
 Для корректной работы захвата сетевого трафика скрипт необходимо запускать от имени администратора:
