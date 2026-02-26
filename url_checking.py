@@ -6,6 +6,9 @@ import requests
 class URLSecurityAnalyzer:
     def __init__(self):
         self.ENTROPY_THRESHOLD = 3.5
+        self.SUSPICIOUS_KEYWORDS = ['login', 'verify', 'update', 'bank', 'secure', 'account', 'signin', 'wallet', 'crypto']
+        self.RISKY_TLDS = ['.zip', '.mov', '.top', '.gq', '.cf', '.tk', '.ml', '.ga', '.work', '.click']
+        self.LEET_CHARS = r'[01345]'
 
     def _check_external_blacklists(self, domain: str) -> bool:
         try:
@@ -47,29 +50,36 @@ class URLSecurityAnalyzer:
 
         except:
             return False
+    
+    def _analyze_anomalies(self, domain_part: str) -> list:
+        anomalies = []
+        if re.search(r'[a-z]', domain_part) and re.search(self.LEET_CHARS, domain_part):
+            if len(domain_part) > 4:
+                anomalies.append(f"Подозрительная замена букв цифрами (Leet-speak) в '{domain_part}'")
+
+        if domain_part.count('-') >= 2:
+            anomalies.append(f"Слишком много дефисов в сегменте '{domain_part}' (признак фишинга)")
+
+        if re.search(r'(.)\1\1', domain_part):
+            anomalies.append(f"Подозрительные повторы символов в '{domain_part}'")
+            
+        return anomalies
 
     def _calculate_shannon_entropy(self, text: str) -> float:
-        if not text:
-            return 0.0
-
+        if not text: return 0.0
         prob = [float(text.count(c)) / len(text) for c in dict.fromkeys(list(text))]
-        entropy = -sum([p * math.log(p) / math.log(2.0) for p in prob])
-        return entropy
+        return -sum([p * math.log(p) / math.log(2.0) for p in prob])
 
     def _is_ip_address(self, domain: str) -> bool:
-        ip_pattern = re.compile(
-            r"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$"
-        )
-        return bool(ip_pattern.match(domain))
+        return bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}$", domain))
 
     def analyze_url(self, url: str) -> dict:
         if not url.startswith(('http://', 'https://')):
-            url = 'http://' + url
+            url = 'https://' + url
             
         try:
             parsed = urlparse(url)
-            domain = parsed.netloc.split(':')[0]
-            
+            domain = parsed.netloc.split(':')[0].lower()
             if not domain:
                 return {"status": "ERROR", "message": "Некорректный URL"}
         except Exception as e:
@@ -77,42 +87,56 @@ class URLSecurityAnalyzer:
 
         risk_score = 0
         details = []
-        is_suspicious = False
-        if self._check_external_blacklists(domain):
-            return {
-                "domain": domain,
-                "status": "DANGER",
-                "risk_score": 100,
-                "details": ["Домен найден в URLHaus (вредоносный)"]
-            }
+
+        if domain.startswith('xn--'):
+            risk_score += 60
+            details.append("Обнаружен Punycode (возможна подмена символов/Homograph attack)")
+
         if self._is_ip_address(domain):
-            risk_score += 40
-            details.append("Используется прямой IP-адрес (подозрительно для публичного сайта)")
-            is_suspicious = True
+            risk_score += 50
+            details.append("Используется прямой IP вместо домена")
+
+        found_keywords = [word for word in self.SUSPICIOUS_KEYWORDS if word in domain]
+        if found_keywords:
+            risk_score += 30 * len(found_keywords)
+            details.append(f"Подозрительные слова: {', '.join(found_keywords)}")
+
+        if any(domain.endswith(tld) for tld in self.RISKY_TLDS):
+            risk_score += 25
+            details.append("Доменная зона (TLD) часто используется для фишинга")
+
+        subdomains = domain.split('.')
+        if len(subdomains) > 3:
+            risk_score += 20
+            details.append(f"Слишком много поддоменов ({len(subdomains)})")
 
         entropy = self._calculate_shannon_entropy(domain)
-        entropy_formatted = round(entropy, 2)
-        
         if entropy > self.ENTROPY_THRESHOLD:
+            risk_score += 40
+            details.append(f"Высокая энтропия ({round(entropy, 2)}): похоже на генерацию случайных символов")
+
+        if '-' in domain or '@' in url:
+            risk_score += 15
+            details.append("Спецсимволы в домене или URL (тире/собачка)")
+        domain_parts = domain.replace('-', '.').split('.')
+        
+        for part in domain_parts:
+            found_anomalies = self._analyze_anomalies(part)
+            if found_anomalies:
+                risk_score += 35 * len(found_anomalies)
+                details.extend(found_anomalies)
+
+        if '@' in url:
             risk_score += 50
-            details.append(f"Высокая энтропия ({entropy_formatted}). Возможен DGA-алгоритм.")
-            is_suspicious = True
-        else:
-            details.append(f"Энтропия в норме ({entropy_formatted}).")
-        if len(domain) > 30:
-            risk_score += 10
-            details.append("Подозрительно длинное имя домена.")
+            details.append("Символ '@' в URL — классический прием для скрытия реального домена")
 
         status = "SAFE"
-        if risk_score >= 70:
-            status = "DANGER"
-        elif risk_score >= 30:
-            status = "WARNING"
+        if risk_score >= 70: status = "DANGER"
+        elif risk_score >= 30: status = "WARNING"
 
         return {
             "domain": domain,
             "status": status,
-            "risk_score": min(risk_score, 100), # Максимум 100
-            "entropy": entropy_formatted,
+            "risk_score": min(risk_score, 100),
             "details": details
         }
