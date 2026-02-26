@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi Security Hub</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #0f0c29;
+            --bg-panel: rgba(255, 255, 255, 0.05);
+            --primary: #4361ee;
+            --success: #06d6a0;
+            --warning: #ffd166;
+            --danger: #ef476f;
+            --text-main: #f8f9fa;
+            --text-muted: #adb5bd;
+            /* New Color for Proxy */
+            --purple-proxy: #7209b7;
+            /* New Color for URL Check */
+            --cyan-url: #4cc9f0;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        
+        body {
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 25px;
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            background: var(--bg-panel);
+            padding: 20px;
+            border-radius: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .header h1 { font-size: 1.5rem; color: var(--primary); }
+        .header h1 i { margin-right: 10px; }
+
+        .panel {
+            background: var(--bg-panel);
+            border-radius: 15px;
+            padding: 20px;
+            height: fit-content;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            color: white;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); }
+
+        .btn-start { background: var(--success); color: #000; }
+        .btn-stop { background: var(--danger); }
+        .btn-clear { background: var(--warning); color: #000; }
+        .btn-load { background: var(--primary); }
+        /* New Button Style */
+        .btn-proxy { background: var(--purple-proxy); }
+        /* URL Check Button Style */
+        .btn-url { background: var(--cyan-url); color: #000; }
+
+        .score-box {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .gauge {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            background: conic-gradient(var(--success) 100%, #333 0);
+            margin: 0 auto 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: background 0.5s ease;
+        }
+        .gauge::before {
+            content: '';
+            position: absolute;
+            width: 130px;
+            height: 130px;
+            background: var(--bg-dark);
+            border-radius: 50%;
+        }
+        .score-val {
+            position: relative;
+            font-size: 2.5rem;
+            font-weight: bold;
+            z-index: 1;
+        }
+
+        .threat-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .threat-card {
+            background: rgba(255,255,255,0.08);
+            border-left: 4px solid var(--primary);
+            padding: 15px;
+            border-radius: 6px;
+            animation: slideIn 0.3s;
+        }
+        .threat-card.HIGH { border-left-color: var(--danger); background: rgba(239, 71, 111, 0.1); }
+        .threat-card.MEDIUM { border-left-color: var(--warning); }
+        
+        .threat-header {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .threat-desc { font-size: 0.9rem; color: var(--text-muted); }
+
+        .empty-log {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+            border: 2px dashed rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: 0; } }
+
+        .stats-row {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-item b { display: block; font-size: 1.2rem; }
+        .stat-item span { font-size: 0.8rem; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-network-wired"></i> Wi-Fi Security</h1>
+            <div id="statusIndicator"><i class="fas fa-circle" style="color: #555;"></i> Готов к работе</div>
+        </div>
+
+        <div class="panel">
+            <div class="score-box">
+                <div class="gauge" id="scoreGauge">
+                    <span class="score-val" id="scoreVal">100%</span>
+                </div>
+                <h3 id="securityStatus">Безопасно</h3>
+            </div>
+
+            <button class="btn btn-start" onclick="startScan()" id="btnStart">
+                <i class="fas fa-play"></i> Сканировать Текущую
+            </button>
+            
+            <button class="btn btn-proxy" onclick="startProxyScan()" id="btnProxy">
+                <i class="fas fa-user-secret"></i> Безопасный Proxy Скан
+            </button>
+
+            <button class="btn btn-url" onclick="checkUrl()" id="btnUrl">
+                <i class="fas fa-globe"></i> Проверить URL
+            </button>
+
+            <button class="btn btn-stop" onclick="stopScan()" id="btnStop" disabled>
+                <i class="fas fa-stop"></i> Стоп
+            </button>
+            <button class="btn btn-load" onclick="loadDataset()">
+                <i class="fas fa-file-upload"></i> Загрузить Датасет
+            </button>
+            <button class="btn btn-clear" onclick="clearLogs()">
+                <i class="fas fa-trash"></i> Очистить
+            </button>
+
+            <div class="stats-row">
+                <div class="stat-item"><b id="cntThreats">0</b><span>Угроз</span></div>
+                <div class="stat-item"><b id="cntPackets">0</b><span>Пакетов</span></div>
+            </div>
+            
+            <div style="margin-top: 20px; font-size: 0.8rem; color: #666;">
+                Файл: <span id="currentFile">Нет</span>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2 style="margin-bottom: 20px;"><i class="fas fa-clipboard-list"></i> Журнал событий</h2>
+            <div id="threatsContainer" class="threat-list">
+                <div class="empty-log">Журнал пуст</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.0/socket.io.js"></script>
+    <script>
+        const socket = io();
+        
+        const el = {
+            gauge: document.getElementById('scoreGauge'),
+            scoreVal: document.getElementById('scoreVal'),
+            secStatus: document.getElementById('securityStatus'),
+            threats: document.getElementById('threatsContainer'),
+            btnStart: document.getElementById('btnStart'),
+            btnStop: document.getElementById('btnStop'),
+            btnProxy: document.getElementById('btnProxy'),
+            cntThreats: document.getElementById('cntThreats'),
+            cntPackets: document.getElementById('cntPackets'),
+            statusInd: document.getElementById('statusIndicator'),
+            curFile: document.getElementById('currentFile')
+        };
+
+        socket.on('connect', () => console.log('Connected'));
+
+        socket.on('scan_started', () => {
+            el.btnStart.disabled = true;
+            el.btnProxy.disabled = true;
+            el.btnStop.disabled = false;
+            el.statusInd.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="color: var(--warning)"></i> Сканирование...';
+        });
+
+        // CUSTOM STATUS MSG
+        socket.on('status_custom', (data) => {
+             el.statusInd.innerHTML = `<i class="fas fa-cog fa-spin" style="color: var(--purple-proxy)"></i> ${data.msg}`;
+        });
+
+        socket.on('status_update', (data) => {
+            if (data.status === 'IDLE') {
+                el.btnStart.disabled = false;
+                el.btnProxy.disabled = false;
+                el.btnStop.disabled = true;
+                el.statusInd.innerHTML = '<i class="fas fa-check" style="color: var(--success)"></i> Готово';
+            }
+        });
+
+        socket.on('scan_complete', (data) => {
+            updateDashboard(data);
+        });
+        
+        socket.on('error', (data) => {
+            alert(data.message);
+            el.statusInd.innerHTML = '<i class="fas fa-times" style="color: var(--danger)"></i> Ошибка';
+        });
+
+        socket.on('threat_detected', (threat) => {
+            console.log('Threat:', threat);
+        });
+
+        function updateDashboard(data) {
+            const score = data.safety_score;
+            el.scoreVal.innerText = score + '%';
+            
+            let color = '#06d6a0';
+            let status = 'Безопасно';
+            
+            if (score < 80) { color = '#ffd166'; status = 'Внимание'; }
+            if (score < 50) { color = '#ef476f'; status = 'Критично'; }
+            
+            el.gauge.style.background = `conic-gradient(${color} ${score}%, #333 0)`;
+            el.secStatus.innerText = status;
+            el.secStatus.style.color = color;
+
+            if (data.stats) {
+                el.cntPackets.innerText = data.stats.total_packets || 0;
+            }
+            if (data.threats) {
+                el.cntThreats.innerText = data.threats.length;
+                renderThreats(data.threats); 
+            } else {
+                renderThreats([]);
+            }
+            
+            if (data.is_dataset) el.statusInd.innerHTML = '<i class="fas fa-database"></i> Датасет загружен';
+        }
+
+        function renderThreats(threats) {
+            if (!threats || threats.length === 0) {
+                el.threats.innerHTML = '<div class="empty-log">Угроз не обнаружено</div>';
+                return;
+            }
+
+            el.threats.innerHTML = '';
+            const sorted = [...threats].sort((a,b) => (a.severity === 'HIGH' ? -1 : 1));
+
+            sorted.forEach(t => {
+                const div = document.createElement('div');
+                div.className = `threat-card ${t.severity}`;
+                div.innerHTML = `
+                    <div class="threat-header">
+                        <span>${t.type}</span>
+                        <span style="font-size:0.8em; padding:2px 8px; border-radius:4px; background:rgba(0,0,0,0.2)">${t.severity}</span>
+                    </div>
+                    <div class="threat-desc">${t.description}</div>
+                    <div style="margin-top:5px; font-size:0.8rem; opacity:0.7">
+                        ${t.source ? `Source: ${t.source}` : ''} 
+                        ${t.timestamp ? `| ${t.timestamp}` : ''}
+                    </div>
+                `;
+                el.threats.appendChild(div);
+            });
+        }
+
+        function startScan() {
+            fetch('/api/scan/start', { method: 'POST' });
+        }
+
+        // NEW FUNCTION FOR PROXY SCAN
+        function startProxyScan() {
+            const ssid = prompt("Введите SSID (название сети):");
+            if(!ssid) return;
+            const password = prompt("Введите пароль от Wi-Fi:");
+            if(!password) return;
+
+            fetch('/api/scan/proxy', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ssid, password })
+            });
+        }
+
+        // NEW FUNCTION FOR URL CHECK
+        function checkUrl() {
+            const url = prompt("Введите URL или домен для проверки (например, google.com):");
+            if (!url) return;
+
+            fetch('/api/scan/url_check', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ url: url })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if(data.success) {
+                    alert(`Результат анализа:\nСтатус: ${data.result}\nДетали: ${data.message}`);
+                } else {
+                    alert("Ошибка проверки: " + data.message);
+                }
+            })
+            .catch(e => alert("Ошибка соединения с сервером"));
+        }
+
+        function stopScan() {
+            fetch('/api/scan/stop', { method: 'POST' });
+        }
+
+        function clearLogs() {
+            fetch('/api/logs/clear', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    el.threats.innerHTML = '<div class="empty-log">Журнал очищен</div>';
+                    el.scoreVal.innerText = '100%';
+                    el.gauge.style.background = `conic-gradient(#06d6a0 100%, #333 0)`;
+                    el.cntThreats.innerText = '0';
+                    el.cntPackets.innerText = '0';
+                    el.curFile.innerText = 'Нет';
+                });
+        }
+
+        function loadDataset() {
+            el.statusInd.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Загрузка...';
+            fetch('/api/dataset/load', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if(d.success) {
+                        el.curFile.innerText = 'dataset';
+                        // Данные придут через сокет 'scan_complete'
+                    } else {
+                        alert(d.message);
+                        el.statusInd.innerHTML = 'Ошибка';
+                    }
+                });
+        }
+        
+        fetch('/api/status').then(r=>r.json()).then(d => {
+            if(d.dataset_info.loaded) el.curFile.innerText = d.dataset_info.filename;
+            updateDashboard({
+                safety_score: d.stats.safety_score,
+                stats: d.stats,
+                threats: d.threats,
+                is_dataset: d.dataset_info.loaded
+            });
+        });
+    </script>
+</body>
+</html>
