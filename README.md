@@ -9,7 +9,6 @@ WiFi Security — это программный комплекс для мони
 - [Тестирование](#тестирование)
 - [Deploy и CI/CD](#deploy-и-ci/cd)
 - [Contributing](#contributing)
-- [To do](#to-do)
 - [Команда проекта](#команда-проекта)
 
 ## Технологии
